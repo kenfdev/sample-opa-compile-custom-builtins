@@ -67,7 +67,7 @@ func main() {
 		"user": "alice",
 	}
 
-	rs, err := pr.Rego(rego.Input(input)).Eval(ctx)
+	rs, err := pr.Rego(rego.Input(input), helloFunc).Eval(ctx)
 	if err != nil {
 		fmt.Printf("failed to eval: %+v\n", err)
 		os.Exit(1)
