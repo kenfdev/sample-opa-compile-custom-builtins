@@ -6,7 +6,6 @@ import (
 	"github.com/open-policy-agent/opa/ast"
 	"github.com/open-policy-agent/opa/rego"
 	"github.com/open-policy-agent/opa/storage/inmem"
-	"github.com/open-policy-agent/opa/topdown"
 	"github.com/open-policy-agent/opa/types"
 	"io/ioutil"
 	"os"
@@ -15,15 +14,8 @@ import (
 var authzPolicyPath = "policy/authz.rego"
 var authzQuery = "data.authz.allow"
 
-func registerCustomBuiltins() {
-	ast.RegisterBuiltin(HelloBuiltin)
-	topdown.RegisterBuiltinFunc(HelloBuiltin.Name, HelloImpl)
-}
-
 func main() {
 	ctx := context.Background()
-
-	registerCustomBuiltins()
 
 	mods, err := initModules()
 	if err != nil {
@@ -31,7 +23,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	compiler, err := initCompiler(mods)
+	compiler, err := initCompiler(mods, map[string]*ast.Builtin{
+		HelloBuiltin.Name: HelloBuiltin,
+	})
 	if err != nil {
 		fmt.Printf("failed to compile modules: %v\n", err)
 		os.Exit(1)
@@ -52,9 +46,15 @@ func main() {
 		os.Exit(1)
 	}
 
+	helloFunc := rego.Function1(&rego.Function{
+		Decl: HelloBuiltin.Decl,
+		Name: HelloBuiltin.Name,
+	}, HelloImpl)
+
 	r := rego.New(rego.ParsedQuery(q),
 		rego.Compiler(compiler),
 		rego.Store(store),
+		helloFunc,
 	)
 
 	pr, err := r.PartialResult(ctx)
@@ -94,8 +94,8 @@ func initModules() (map[string]*ast.Module, error) {
 	return mods, nil
 }
 
-func initCompiler(mods map[string]*ast.Module) (*ast.Compiler, error) {
-	compiler := ast.NewCompiler()
+func initCompiler(mods map[string]*ast.Module, builtins map[string]*ast.Builtin) (*ast.Compiler, error) {
+	compiler := ast.NewCompiler().WithBuiltins(builtins)
 	compiler.Compile(mods)
 	if compiler.Failed() {
 		return nil, compiler.Errors
@@ -117,9 +117,9 @@ var HelloBuiltin = &ast.Builtin{
 	Decl: types.NewFunction(types.Args(types.S), types.S),
 }
 
-var HelloImpl = func(bctx rego.BuiltinContext, operands []*ast.Term, iter func(*ast.Term) error) error {
-	if str, ok := operands[0].Value.(ast.String); ok {
-		return iter(ast.StringTerm("hello, " + string(str)))
+func HelloImpl(bctx rego.BuiltinContext, a *ast.Term) (*ast.Term, error) {
+	if str, ok := a.Value.(ast.String); ok {
+		return ast.StringTerm("hello, " + string(str)), nil
 	}
-	return nil
+	return nil, nil
 }
